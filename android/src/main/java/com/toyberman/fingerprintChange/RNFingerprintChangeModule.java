@@ -1,21 +1,50 @@
 package com.toyberman.fingerprintChange;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.Build;
-import android.preference.PreferenceManager;
-import android.support.annotation.RequiresApi;
-import android.support.v4.hardware.fingerprint.FingerprintManagerCompat;
+import android.os.CancellationSignal;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyInfo;
+import android.security.keystore.KeyPermanentlyInvalidatedException;
 
-import com.facebook.react.bridge.Callback;
+import java.security.InvalidKeyException;
+
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.biometric.BiometricConstants;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.WritableNativeMap;
+import com.facebook.react.bridge.UiThreadUtil;
+import com.facebook.react.modules.core.DeviceEventManagerModule;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.List;
+import java.security.KeyStore;
+import java.security.UnrecoverableKeyException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+
+import androidx.fragment.app.FragmentActivity;
+import com.facebook.react.bridge.Callback;
 
 public class RNFingerprintChangeModule extends ReactContextBaseJavaModule {
 
@@ -26,8 +55,6 @@ public class RNFingerprintChangeModule extends ReactContextBaseJavaModule {
     public RNFingerprintChangeModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
-
-        spref = PreferenceManager.getDefaultSharedPreferences(reactContext);
     }
 
     /**
@@ -35,86 +62,79 @@ public class RNFingerprintChangeModule extends ReactContextBaseJavaModule {
      *
      * @param context
      * @return
-     * @throws NoSuchMethodException
-     * @throws IllegalAccessException
-     * @throws InvocationTargetException
-     * @throws ClassNotFoundException
+     * @throws InvalidKeyException
+     * @throws KeyPermanentlyInvalidatedException
      */
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    private int getFingerprintInfo(Context context) throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, ClassNotFoundException {
-        FingerprintManager fingerprintManager = (FingerprintManager) context.getSystemService(Context.FINGERPRINT_SERVICE);
-        Method method = FingerprintManager.class.getDeclaredMethod("getEnrolledFingerprints");
-        Object obj = method.invoke(fingerprintManager);
-
-        int fingerprintsIdSum = 0;
-        if (obj != null) {
-            Class<?> clazz = Class.forName("android.hardware.fingerprint.Fingerprint");
-            Method getFingerId = clazz.getDeclaredMethod("getFingerId");
-
-            for (int i = 0; i < ((List) obj).size(); i++) {
-                Object item = ((List) obj).get(i);
-                if (item != null) {
-                    fingerprintsIdSum += (int) getFingerId.invoke(item);
-                }
-            }
-
-        }
-
-        return fingerprintsIdSum;
-
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.M)
     @ReactMethod
     public void hasFingerPrintChanged(Callback errorCallback, Callback successCallback) {
-
-        // if no fingerprint hardware return false
-        if (!hasFingerprintHardware(this.reactContext)) {
-            successCallback.invoke(false);
-            return;
-        }
-
+    Cipher cipher = getCipher();
+    SecretKey secretKey = getSecretKey();
+    if (getSecretKey() == null){
+        generateSecretKey(new KeyGenParameterSpec.Builder(
+                "fingerPrintKey",
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
+                .setUserAuthenticationRequired(true)
+                .setInvalidatedByBiometricEnrollment(true)
+                .build());
+            }
         try {
-            // get current fingers id sum
-            int fingersId = getFingerprintInfo(this.reactContext);
-            // last saved key
-            int lastKeyId = spref.getInt(LAST_KEY_ID, -1);
-            if (lastKeyId != fingersId && lastKeyId!= -1) {
-                spref.edit().putInt(LAST_KEY_ID, fingersId).apply();
+             secretKey = getSecretKey();
+             cipher.init(Cipher.ENCRYPT_MODE, secretKey);
+             successCallback.invoke(false);
+             return;
+         }
+          catch (KeyPermanentlyInvalidatedException e) {
+                generateSecretKey(new KeyGenParameterSpec.Builder(
+                "fingerPrintKey",
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
+                .setUserAuthenticationRequired(true)
+                .setInvalidatedByBiometricEnrollment(true)
+                .build());
                 successCallback.invoke(true);
-
-            } else {
-                successCallback.invoke(false);
-            }
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException | ClassNotFoundException e) {
-            successCallback.invoke(false);
+                return;
+        } catch (InvalidKeyException e) {
+            errorCallback.invoke("Error");
         }
+    }   
+
+    private void generateSecretKey(KeyGenParameterSpec keyGenParameterSpec) {
+    try{
+    KeyGenerator keyGenerator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+    keyGenerator.init(keyGenParameterSpec);
+    keyGenerator.generateKey();
+     }
+    catch(Exception e){
     }
+}
 
-    private boolean hasFingerprintHardware(Context mContext) {
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            //Fingerprint API only available on from Android 6.0 (M)
-            FingerprintManager fingerprintManager = (FingerprintManager) mContext.getSystemService(Context.FINGERPRINT_SERVICE);
-
-            if (fingerprintManager == null) {
-                return false;
-            }
-
-            return fingerprintManager.isHardwareDetected();
-        } else {
-            // Supporting devices with SDK < 23
-            FingerprintManagerCompat fingerprintManager = FingerprintManagerCompat.from(getReactApplicationContext());
-
-            if (fingerprintManager == null) {
-                return false;
-            }
-
-            return fingerprintManager.isHardwareDetected();
-        }
-
+private SecretKey getSecretKey() {
+    try{
+    KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+    keyStore.load(null);
+    return ((SecretKey)keyStore.getKey("fingerPrintKey", null));
     }
+    catch(Exception e){
+        return null;
+    }
+}
 
+private Cipher getCipher() {
+    try{
+    return Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/"
+            + KeyProperties.BLOCK_MODE_CBC + "/"
+            + KeyProperties.ENCRYPTION_PADDING_PKCS7);
+    }
+    catch(Exception e){
+        return null;
+    }
+}
+
+    
     @Override
     public String getName() {
         return "RNFingerprintChange";
