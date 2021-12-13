@@ -1,4 +1,3 @@
-
 package com.toyberman.fingerprintChange;
 
 import java.util.Arrays;
