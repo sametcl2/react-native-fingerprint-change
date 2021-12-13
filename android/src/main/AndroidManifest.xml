@@ -1,7 +1,3 @@
-
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="com.toyberman.fingerprintChange">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.toyberman.fingerprintChange">
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
-
 </manifest>
-  
