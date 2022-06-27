@@ -76,7 +76,7 @@ public class RNFingerprintChangeModule extends ReactContextBaseJavaModule {
                 .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
                 .setUserAuthenticationRequired(true)
-                .setInvalidatedByBiometricEnrollment(true)
+                .setInvalidatedByBiometricEnrollment(false)
                 .build());
             }
         try {
@@ -92,7 +92,7 @@ public class RNFingerprintChangeModule extends ReactContextBaseJavaModule {
                 .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
                 .setUserAuthenticationRequired(true)
-                .setInvalidatedByBiometricEnrollment(true)
+                .setInvalidatedByBiometricEnrollment(false)
                 .build());
                 successCallback.invoke(true);
                 return;
